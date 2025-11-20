@@ -1,0 +1,92 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  
+}
+
+// User model for authentication
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String   // Hash this with bcrypt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  sessions  Session[]
+  
+  @@index([email])
+}
+
+// Session model for recording sessions
+model Session {
+  id          String        @id @default(cuid())
+  userId      String
+  title       String?       @default("Untitled Session")
+  duration    Int?          // Duration in seconds
+  status      SessionStatus @default(RECORDING)
+  audioSource AudioSource   @default(MICROPHONE)
+  
+  // Metadata
+  startedAt   DateTime      @default(now())
+  endedAt     DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  // Relations
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transcripts Transcript[]
+  
+  @@index([userId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+// Transcript model for transcription chunks and final results
+model Transcript {
+  id          String   @id @default(cuid())
+  sessionId   String
+  
+  // Transcript content
+  content     String   @db.Text // Raw transcript text
+  summary     String?  @db.Text // AI-generated summary
+  
+  // Chunked transcription support
+  chunkIndex  Int?     // For incremental transcription (0, 1, 2...)
+  timestamp   Float?   // Time offset in seconds
+  speaker     String?  // For diarization (Speaker 1, Speaker 2, etc.)
+  
+  // Metadata
+  isComplete  Boolean  @default(false) // True for final/summary transcript
+  confidence  Float?   // Transcription confidence score
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  @@index([sessionId])
+  @@index([chunkIndex])
+  @@index([isComplete])
+}
+
+// Enums
+enum SessionStatus {
+  RECORDING
+  PAUSED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AudioSource {
+  MICROPHONE
+  TAB_SHARE
+  SCREEN_SHARE
+}
