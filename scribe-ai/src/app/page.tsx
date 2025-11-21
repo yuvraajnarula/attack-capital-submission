@@ -15,8 +15,8 @@ export default function Home() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <Link 
-                href="/dashboard" 
+              <Link
+                href="/dashboard"
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
               >
                 Get Started
@@ -34,16 +34,22 @@ export default function Home() {
             <span className="text-blue-600 block">Transcription</span>
           </h1>
           <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 max-w-3xl mx-auto">
-            Transform your meetings into searchable, summarized transcripts with real-time AI transcription. 
+            Transform your meetings into searchable, summarized transcripts with real-time AI transcription.
             Perfect for professionals who need accurate notes without the manual work.
           </p>
-          
-          <div className="flex flex-col sm:flex-row justify-center items-center mb-16">
-            <Link 
+
+          <div className="flex flex-col sm:flex-row justify-center gap-[4px] items-center mb-16">
+            <Link
               href="/dashboard"
               className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors"
             >
               Start Transcribing Free
+            </Link>
+            <Link
+              href="/register"
+              className="border-blue-600 bg-transparent border-2 hover:bg-blue-700/25 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors"
+            >
+              Create your account
             </Link>
           </div>
 
