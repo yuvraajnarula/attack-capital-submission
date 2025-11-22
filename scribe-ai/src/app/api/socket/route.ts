@@ -1,16 +1,26 @@
-import { NextApiRequest, NextApiResponse } from 'next';
-import { NextApiResponseWithSocket } from '@/lib/socket-server';
-import initializeSocket from '@/lib/socket-server';
+import { NextRequest, NextResponse } from 'next/server';
 
-export default function handler(
-  req: NextApiRequest,
-  res: NextApiResponseWithSocket
-) {
-  if (req.method === 'GET') {
-    initializeSocket(res);
-    res.status(200).json({ message: 'Socket server initialized' });
-  } else {
-    res.setHeader('Allow', ['GET']);
-    res.status(405).json({ message: `Method ${req.method} not allowed` });
-  }
+export async function GET(request: NextRequest) {
+  return NextResponse.json({ 
+    message: 'Socket.IO endpoint',
+    status: 'active'
+  });
+}
+
+export async function POST(request: NextRequest) {
+  return NextResponse.json({ 
+    message: 'Socket.IO endpoint',
+    status: 'active'
+  });
+}
+
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
 }

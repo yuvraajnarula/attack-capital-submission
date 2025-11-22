@@ -37,7 +37,7 @@ interface UseRecordingsOptions {
 
 export const useRecordings = (options: UseRecordingsOptions = {}) => {
   const { limit = 10, offset = 0, status, autoFetch = false } = options;
-  
+
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export const useRecordings = (options: UseRecordingsOptions = {}) => {
     hasMore: false,
   });
 
-  const fetchRecordings = useCallback(async () => {
+  const fetchRecordings = useCallback(async (): Promise<Recording[]> => {
     setIsLoading(true);
     setError(null);
 
@@ -62,27 +62,22 @@ export const useRecordings = (options: UseRecordingsOptions = {}) => {
       const response = await fetch(`/api/recordings?${params}`, {
         method: 'GET',
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch recordings: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Failed to fetch recordings: ${response.status}`);
 
       const data: RecordingsResponse = await response.json();
 
-      if (data.success) {
-        setRecordings(data.recordings);
-        setPagination(data.pagination);
-      } else {
-        throw new Error('Failed to fetch recordings');
-      }
+      if (!data.success) throw new Error('Failed to fetch recordings');
+
+      setPagination(data.pagination);
+      return data.recordings;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch recordings';
       setError(errorMessage);
       console.error('Fetch recordings error:', err);
+      return [];
     } finally {
       setIsLoading(false);
     }

@@ -1,43 +1,36 @@
 import { Server as NetServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
-import { NextApiResponse } from 'next';
 import { transcribeAudio, generateSummary } from './gemini';
-import  prisma  from './prisma';
+import prisma from './prisma';
 
-export type NextApiResponseWithSocket = NextApiResponse & {
-  socket: {
-    server: NetServer & {
-      io?: SocketIOServer;
-    };
-  };
-};
+let io: SocketIOServer | null = null;
 
-const initializeSocket = (res: NextApiResponseWithSocket) => {
-  if (!res.socket.server.io) {
-    const io = new SocketIOServer(res.socket.server, {
-      path: '/api/socket',
+export const initializeSocket = (httpServer?: NetServer) => {
+  if (!io && httpServer) {
+    io = new SocketIOServer(httpServer, {
+      path: '/api/socket/io',
       addTrailingSlash: false,
+      cors: {
+        origin: process.env.NEXTAUTH_URL || "http://localhost:3000",
+        methods: ["GET", "POST"]
+      }
     });
 
     io.on('connection', (socket) => {
       console.log('Client connected:', socket.id);
 
-      // Handle audio chunk transmission
       socket.on('audio-chunk', async (data: {
         recordingId: string;
         chunk: ArrayBuffer;
         isFinal: boolean;
       }) => {
         try {
-          console.log('🎵 Received audio chunk for recording:', data.recordingId);
+          console.log('Received audio chunk for recording:', data.recordingId);
           
-          // Convert ArrayBuffer to Blob
           const audioBlob = new Blob([data.chunk], { type: 'audio/webm' });
           
-          // Transcribe with Gemini
           const transcription = await transcribeAudio(audioBlob);
           
-          // Emit transcription update
           socket.emit('transcription-update', {
             recordingId: data.recordingId,
             text: transcription,
@@ -93,7 +86,6 @@ const initializeSocket = (res: NextApiResponseWithSocket) => {
 
           const summary = await generateSummary(recording.transcript);
 
-          // Calculate duration
           const duration = Math.floor(
             (new Date().getTime() - new Date(recording.createdAt).getTime()) / 1000
           );
@@ -122,8 +114,6 @@ const initializeSocket = (res: NextApiResponseWithSocket) => {
           });
         }
       });
-
-      // Handle recording pause
       socket.on('pause-recording', async (data: { recordingId: string }) => {
         try {
           await prisma.recording.update({
@@ -144,7 +134,6 @@ const initializeSocket = (res: NextApiResponseWithSocket) => {
         }
       });
 
-      // Handle recording resume
       socket.on('resume-recording', async (data: { recordingId: string }) => {
         try {
           await prisma.recording.update({
@@ -170,8 +159,17 @@ const initializeSocket = (res: NextApiResponseWithSocket) => {
       });
     });
 
-    res.socket.server.io = io;
+    console.log('Socket.IO server initialized');
   }
+  
+  return io;
+};
+
+export const getIO = () => {
+  if (!io) {
+    throw new Error('Socket.IO not initialized');
+  }
+  return io;
 };
 
 export default initializeSocket;

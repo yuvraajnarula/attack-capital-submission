@@ -48,16 +48,13 @@ model CustomAuthSession {
   user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-//
-// ⚡ Correct Better Auth account model for email+password
-//
 model Account {
   id         String   @id @default(cuid())
   userId     String
-  type       String // REQUIRED by Better Auth
-  providerId String // REQUIRED by Better Auth
-  accountId  String // REQUIRED by Better Auth
-  password   String? // only used for credentials
+  type       String
+  providerId String 
+  accountId  String 
+  password   String? 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -66,9 +63,6 @@ model Account {
   @@unique([providerId, accountId])
 }
 
-//
-// ⚡ Better Auth session model
-//
 model Session {
   id        String   @id @default(cuid())
   userId    String
@@ -81,9 +75,6 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-//
-// ⚡ Better Auth email verification model
-//
 model VerificationToken {
   identifier String
   token      String   @unique

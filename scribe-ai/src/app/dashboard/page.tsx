@@ -1,11 +1,21 @@
-// app/dashboard/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth, useAuthInit, useAuthActions } from '../hooks/useAuth';
-import { useRecordings,Recording } from '../hooks/useRecording';
+import { useRecordings, Recording } from '../hooks/useRecording';
+
+interface RecordingsResponse {
+  success: boolean;
+  recordings: Recording[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
 
 export default function Dashboard() {
   const { user, isAuthenticated } = useAuth();
@@ -19,7 +29,8 @@ export default function Dashboard() {
   const [stats, setStats] = useState({
     total: 0,
     completed: 0,
-    processing: 0
+    processing: 0,
+    recording: 0
   });
 
   useEffect(() => {
@@ -57,8 +68,9 @@ export default function Dashboard() {
             const total = data.pagination.total;
             const completed = data.recordings.filter(r => r.status === 'COMPLETED').length;
             const processing = data.recordings.filter(r => r.status === 'PROCESSING').length;
+            const recording = data.recordings.filter(r => r.status === 'RECORDING').length;
             
-            setStats({ total, completed, processing });
+            setStats({ total, completed, processing, recording });
           }
         } catch (error) {
           console.error('Failed to load recordings:', error);
@@ -84,6 +96,8 @@ export default function Dashboard() {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
@@ -117,36 +131,9 @@ export default function Dashboard() {
     }
   };
 
-  const handleCreateRecording = async (source: 'mic' | 'tab') => {
-    try {
-      const title = `${source === 'mic' ? 'Mic' : 'Tab'} Recording - ${new Date().toLocaleString()}`;
-      
-      const response = await fetch('/api/recordings', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create recording');
-      }
-
-      const data = await response.json();
-      
-      if (data.success) {
-        // Redirect to recording page or show success
-        alert(`Recording created successfully!\n\nRecording ID: ${data.recording.id}\n\nThis will navigate to the recording interface.`);
-        
-        // Refresh recordings list
-        window.location.reload();
-      }
-    } catch (error) {
-      console.error('Failed to create recording:', error);
-      alert('Failed to create recording. Please try again.');
-    }
+  const handleStartRecording = (type: 'microphone' | 'screen') => {
+    // Navigate to the new recording page with the selected type
+    router.push('/recordings/new');
   };
 
   const handleViewRecording = (id: string) => {
@@ -156,6 +143,12 @@ export default function Dashboard() {
   const handleSignOut = async () => {
     await signOut();
     router.push('/login');
+  };
+
+  const truncateText = (text: string | null | undefined, maxLength: number = 100) => {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
   };
 
   if (isLoading) {
@@ -180,9 +173,9 @@ export default function Dashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <Link href="/dashboard" className="text-2xl font-bold text-gray-900 dark:text-white">
                 ScribeAI
-              </h1>
+              </Link>
               <nav className="ml-8 flex space-x-4">
                 <Link
                   href="/dashboard"
@@ -194,7 +187,7 @@ export default function Dashboard() {
                   href="/recordings"
                   className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 font-medium px-3 py-2"
                 >
-                  Sessions
+                  All Recordings
                 </Link>
                 <Link
                   href="/settings"
@@ -238,70 +231,108 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Stats Overview */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center">
+              <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center mr-3">
+                <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Total Sessions</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center">
+              <div className="w-10 h-10 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center mr-3">
+                <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.completed}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Completed</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center">
+              <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center mr-3">
+                <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.processing}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Processing</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center">
+              <div className="w-10 h-10 bg-red-100 dark:bg-red-900 rounded-lg flex items-center justify-center mr-3">
+                <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.recording}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Active</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          <button
-            onClick={() => handleCreateRecording('mic')}
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow text-left w-full"
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <Link
+            href="/recordings/new"
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow text-left w-full group block"
           >
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Start Mic Recording
+                  Start New Recording
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400 text-sm">
-                  Capture audio directly from your microphone
+                  Capture audio from microphone or screen share with real-time transcription
                 </p>
               </div>
-              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
+              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center group-hover:bg-blue-200 dark:group-hover:bg-blue-800 transition-colors">
                 <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
               </div>
             </div>
-          </button>
+          </Link>
 
-          <button
-            onClick={() => handleCreateRecording('tab')}
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow text-left w-full"
+          <Link
+            href="/recordings"
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow text-left w-full group block"
           >
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Record Tab Audio
+                  View All Sessions
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400 text-sm">
-                  Capture audio from browser tabs or applications
+                  Browse all your recordings, transcripts, and AI summaries
                 </p>
               </div>
-              <div className="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
+              <div className="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center group-hover:bg-green-200 dark:group-hover:bg-green-800 transition-colors">
                 <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
                 </svg>
               </div>
             </div>
-          </button>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Session Stats
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400 text-sm">
-                  {stats.total} total recordings
-                </p>
-                <p className="text-gray-600 dark:text-gray-400 text-sm">
-                  {stats.completed} completed
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center">
-                <svg className="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-              </div>
-            </div>
-          </div>
+          </Link>
         </div>
 
         {/* Recent Recordings Section */}
@@ -311,9 +342,12 @@ export default function Dashboard() {
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 Recent Recordings
               </h2>
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                {recordings.length} of {stats.total} sessions
-              </span>
+              <Link 
+                href="/recordings"
+                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-sm"
+              >
+                View All
+              </Link>
             </div>
           </div>
           
@@ -333,19 +367,13 @@ export default function Dashboard() {
                 <p className="mt-2 text-gray-500 dark:text-gray-400">
                   Get started by creating your first recording session.
                 </p>
-                <div className="mt-6 space-x-4">
-                  <button
-                    onClick={() => handleCreateRecording('mic')}
+                <div className="mt-6">
+                  <Link
+                    href="/recordings/new"
                     className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
                   >
-                    Start Mic Recording
-                  </button>
-                  <button
-                    onClick={() => handleCreateRecording('tab')}
-                    className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    Record Tab Audio
-                  </button>
+                    Start New Recording
+                  </Link>
                 </div>
               </div>
             ) : (
@@ -353,40 +381,42 @@ export default function Dashboard() {
                 {recordings.map((recording) => (
                   <div
                     key={recording.id}
-                    className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                    className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+                    onClick={() => handleViewRecording(recording.id)}
                   >
-                    <div className="flex items-center space-x-4 flex-1">
-                      <div className={`w-2 h-2 rounded-full ${getStatusColor(recording.status)}`}></div>
-                      <div className="flex-1">
-                        <h4 className="font-medium text-gray-900 dark:text-white">
+                    <div className="flex items-center space-x-4 flex-1 min-w-0">
+                      <div className={`w-3 h-3 rounded-full ${getStatusColor(recording.status)} flex-shrink-0`}></div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-gray-900 dark:text-white truncate">
                           {recording.title}
                         </h4>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
                           {formatDate(recording.createdAt)} • {formatDuration(recording.duration)}
                         </p>
-                        {recording.summary && (
-                          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                            {recording.summary}
+                        {recording.transcript && (
+                          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">
+                            {truncateText(recording.transcript, 120)}
                           </p>
                         )}
                       </div>
                     </div>
                     
-                    <div className="flex items-center space-x-2">
-                      <span className={`px-2 py-1 text-xs rounded-full ${
+                    <div className="flex items-center space-x-3 flex-shrink-0">
+                      <span className={`px-3 py-1 text-xs rounded-full ${
                         recording.status === 'COMPLETED' 
                           ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                          : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                          : recording.status === 'PROCESSING'
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                          : recording.status === 'RECORDING'
+                          ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                          : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
                       }`}>
                         {getStatusText(recording.status)}
                       </span>
                       
-                      <button 
-                        onClick={() => handleViewRecording(recording.id)}
-                        className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-sm"
-                      >
-                        View Details
-                      </button>
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
                     </div>
                   </div>
                 ))}

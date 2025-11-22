@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import  prisma  from '@/lib/prisma';
+import prisma from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
+import { RecordingStatus, Prisma } from '../../../generated/prisma/client';
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,13 +24,14 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get('status');
 
     // Build where clause
-    const where = {
+    const where: Prisma.RecordingWhereInput = {
       userId: session.user.id,
-      status: 'ACTIVE'
+      status: RecordingStatus.ACTIVE
     };
 
-    if (status && ['RECORDING', 'PAUSED', 'PROCESSING', 'COMPLETED'].includes(status)) {
-      where.status = status;
+
+    if (status && Object.values(RecordingStatus).includes(status as RecordingStatus)) {
+      where.status = status as RecordingStatus;
     }
 
     // Fetch recordings

@@ -158,7 +158,7 @@ export default function Settings() {
                   href="/recordings"
                   className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 font-medium px-3 py-2"
                 >
-                  Sessions
+                  All recordings
                 </Link>
                 <Link
                   href="/settings"
