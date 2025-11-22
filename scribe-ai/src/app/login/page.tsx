@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useAuthActions } from '../hooks/useAuth';
+import { useAuth, useAuthInit, useAuthActions } from '../hooks/useAuth';
 
 export default function Login() {
   const [formData, setFormData] = useState({
@@ -17,6 +17,15 @@ export default function Login() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
   const { signIn } = useAuthActions();
+  const { isAuthenticated } = useAuth();
+  const { isLoading: authLoading } = useAuthInit(); // This automatically checks auth on mount
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.push('/dashboard');
+    }
+  }, [isAuthenticated, authLoading, router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({
@@ -31,7 +40,6 @@ export default function Login() {
     setIsLoading(true);
     setError('');
 
-    // Use the auth actions hook for login
     const result = await signIn(formData.email, formData.password);
     
     if (result.success) {
@@ -42,6 +50,23 @@ export default function Login() {
     
     setIsLoading(false);
   };
+
+  // Show loading state while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't show login form if already authenticated
+  if (isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
@@ -139,7 +164,7 @@ export default function Login() {
         </form>
         <div className="mt-6 text-center">
           <p className="text-gray-600 dark:text-gray-400">
-            Dont have an account?{' '}
+            {`Don't`} have an account?{' '}
             <Link 
               href="/register" 
               className="text-blue-600 hover:text-blue-700 font-semibold transition-colors duration-200"

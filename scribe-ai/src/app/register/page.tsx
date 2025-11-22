@@ -1,10 +1,9 @@
-// app/register/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useAuthActions } from '../hooks/useAuth';
+import { useAuth, useAuthInit, useAuthActions } from '../hooks/useAuth';
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -18,13 +17,21 @@ export default function Register() {
   
   const router = useRouter();
   const { signUp, validatePassword, validateEmail } = useAuthActions();
+  const { isAuthenticated } = useAuth();
+  const { isLoading: authLoading } = useAuthInit(); // This automatically checks auth on mount
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.push('/dashboard');
+    }
+  }, [isAuthenticated, authLoading, router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({
       ...prev,
       [e.target.name]: e.target.value
     }));
-    // Clear error when user starts typing
     if (error) setError('');
   };
 
@@ -59,7 +66,6 @@ export default function Register() {
       return;
     }
 
-    // Use the auth actions hook for registration
     const result = await signUp(formData.email, formData.password, formData.name.trim());
     
     if (result.success) {
@@ -70,6 +76,23 @@ export default function Register() {
     
     setIsLoading(false);
   };
+
+  // Show loading state while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't show register form if already authenticated
+  if (isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">

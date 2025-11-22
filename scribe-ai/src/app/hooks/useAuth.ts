@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { useEffect } from 'react';
 
 interface User {
   id: string;
@@ -48,13 +49,12 @@ export const useAuth = create<AuthState>()(
       user: null,
       session: null,
       isAuthenticated: false,
-      isLoading: true,
+      isLoading: false, // Changed from true to false
       isActionLoading: false,
       login: (user: User, session: Session) =>
         set({ user, session, isAuthenticated: true }),
       logout: async () => {
         try {
-          // Call Better Auth logout endpoint
           await fetch('/api/auth/sign-out', {
             method: 'POST',
             headers: {
@@ -92,7 +92,6 @@ export const useAuthCheck = () => {
   const checkAuth = async () => {
     setLoading(true);
     try {
-      // Use Better Auth's session endpoint
       const response = await fetch('/api/auth/get-session', {
         method: 'GET',
         credentials: 'include',
@@ -102,15 +101,29 @@ export const useAuthCheck = () => {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const text = await response.text();
+        
+        // Check if response is empty
+        if (!text || text.trim() === '') {
+          console.log('Empty response from auth check, logging out');
+          await logout();
+          return;
+        }
 
-        // Better Auth returns { user, session } structure
-        if (data?.user && data?.session) {
-          login(data.user, data.session);
-        } else {
+        try {
+          const data = JSON.parse(text);
+          
+          if (data?.user && data?.session) {
+            login(data.user, data.session);
+          } else {
+            await logout();
+          }
+        } catch (parseError) {
+          console.error('Failed to parse auth response:', parseError);
           await logout();
         }
       } else {
+        console.log('Auth check failed with status:', response.status);
         await logout();
       }
     } catch (error) {
@@ -122,6 +135,18 @@ export const useAuthCheck = () => {
   };
 
   return checkAuth;
+};
+
+// Hook to automatically check auth on mount
+export const useAuthInit = () => {
+  const checkAuth = useAuthCheck();
+  const { isLoading } = useAuth();
+
+  useEffect(() => {
+    checkAuth();
+  }, []); // Only run once on mount
+
+  return { isLoading };
 };
 
 // Helper hook to refresh session
@@ -139,10 +164,21 @@ export const useRefreshSession = () => {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        if (data?.user && data?.session) {
-          login(data.user, data.session);
-          return true;
+        const text = await response.text();
+        
+        if (!text || text.trim() === '') {
+          await logout();
+          return false;
+        }
+
+        try {
+          const data = JSON.parse(text);
+          if (data?.user && data?.session) {
+            login(data.user, data.session);
+            return true;
+          }
+        } catch (parseError) {
+          console.error('Failed to parse session response:', parseError);
         }
       }
       await logout();
@@ -185,22 +221,12 @@ export const useAuthActions = () => {
   const signIn = async (email: string, password: string): Promise<AuthResponse> => {
     setActionLoading(true);
     try {
-      // Validate email
       if (!validateEmail(email)) {
         return {
           success: false,
           error: 'Please enter a valid email address'
         };
       }
-
-      // Validate password
-      // const passwordError = validatePassword(password);
-      // if (passwordError) {
-      //   return {
-      //     success: false,
-      //     error: passwordError
-      //   };
-      // }
 
       const response = await fetch('/api/auth/sign-in/email', {
         method: 'POST',
@@ -211,8 +237,26 @@ export const useAuthActions = () => {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
-      console.log(data)
+      const text = await response.text();
+      
+      if (!text || text.trim() === '') {
+        return {
+          success: false,
+          error: 'Empty response from server'
+        };
+      }
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (parseError) {
+        console.error('Failed to parse sign in response:', parseError);
+        return {
+          success: false,
+          error: 'Invalid response from server'
+        };
+      }
+      
       if (!response.ok) {
         return {
           success: false,
@@ -243,7 +287,6 @@ export const useAuthActions = () => {
   const signUp = async (email: string, password: string, name?: string): Promise<AuthResponse> => {
     setActionLoading(true);
     try {
-      // Validate email
       if (!validateEmail(email)) {
         return {
           success: false,
@@ -251,7 +294,6 @@ export const useAuthActions = () => {
         };
       }
 
-      // Validate password
       const passwordError = validatePassword(password);
       if (passwordError) {
         return {
