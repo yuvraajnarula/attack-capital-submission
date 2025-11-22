@@ -1,97 +1,86 @@
+// app/dashboard/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth, useAuthInit, useAuthActions } from '../hooks/useAuth';
-
-interface Recording {
-  id: string;
-  title: string;
-  status: 'RECORDING' | 'PAUSED' | 'PROCESSING' | 'COMPLETED';
-  duration: number;
-  transcript?: string;
-  summary?: string;
-  createdAt: Date;
-}
+import { useRecordings,Recording } from '../hooks/useRecording';
 
 export default function Dashboard() {
   const { user, isAuthenticated } = useAuth();
-  const { isLoading } = useAuthInit(); // This automatically checks auth on mount
+  const { isLoading } = useAuthInit(); 
   const { signOut } = useAuthActions();
   const router = useRouter();
   
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isLoadingRecordings, setIsLoadingRecordings] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [stats, setStats] = useState({
+    total: 0,
+    completed: 0,
+    processing: 0
+  });
 
-  // Redirect if not authenticated
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push('/login');
     }
   }, [isAuthenticated, isLoading, router]);
 
-  // Load mock data
+  // Load recordings from backend
   useEffect(() => {
-    let mounted = true;
-
-    const loadMockData = async () => {
-      if (isAuthenticated && !isLoading && mounted) {
+    const loadRecordings = async () => {
+      if (isAuthenticated && !isLoading) {
         setIsLoadingRecordings(true);
+        setError('');
         
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        if (mounted) {
-          setRecordings([
-            {
-              id: '1',
-              title: 'Team Standup Meeting',
-              status: 'COMPLETED',
-              duration: 1200,
-              transcript: 'Team discussed project updates and blockers...',
-              summary: 'Weekly standup covering sprint progress',
-              createdAt: new Date('2024-01-15'),
+        try {
+          const response = await fetch('/api/recordings?limit=10&offset=0', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
             },
-            {
-              id: '2',
-              title: 'Client Presentation',
-              status: 'COMPLETED',
-              duration: 1800,
-              transcript: 'Presented Q4 results to client stakeholders...',
-              summary: 'Q4 performance review with action items',
-              createdAt: new Date('2024-01-10'),
-            },
-            {
-              id: '3',
-              title: 'Product Brainstorm',
-              status: 'COMPLETED',
-              duration: 2700,
-              transcript: 'Brainstorming session for new features...',
-              summary: 'Ideation for upcoming product release',
-              createdAt: new Date('2024-01-05'),
-            },
-          ]);
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to fetch recordings');
+          }
+
+          const data: RecordingsResponse = await response.json();
+          
+          if (data.success) {
+            setRecordings(data.recordings);
+            
+            // Calculate stats
+            const total = data.pagination.total;
+            const completed = data.recordings.filter(r => r.status === 'COMPLETED').length;
+            const processing = data.recordings.filter(r => r.status === 'PROCESSING').length;
+            
+            setStats({ total, completed, processing });
+          }
+        } catch (error) {
+          console.error('Failed to load recordings:', error);
+          setError('Failed to load recordings. Please try again.');
+        } finally {
           setIsLoadingRecordings(false);
         }
       }
     };
 
-    loadMockData();
-
-    return () => {
-      mounted = false;
-    };
+    loadRecordings();
   }, [isAuthenticated, isLoading]);
 
-  const formatDuration = (seconds: number) => {
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString('en-US', {
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -128,8 +117,40 @@ export default function Dashboard() {
     }
   };
 
-  const handleCreateMeeting = (source: 'mic' | 'tab') => {
-    alert(`Starting ${source} recording...\n\nThis will open the recording interface where you can:\n- Record audio from your ${source === 'mic' ? 'microphone' : 'browser tab'}\n- See real-time transcription\n- Pause/resume recording\n- Generate AI summary`);
+  const handleCreateRecording = async (source: 'mic' | 'tab') => {
+    try {
+      const title = `${source === 'mic' ? 'Mic' : 'Tab'} Recording - ${new Date().toLocaleString()}`;
+      
+      const response = await fetch('/api/recordings', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create recording');
+      }
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Redirect to recording page or show success
+        alert(`Recording created successfully!\n\nRecording ID: ${data.recording.id}\n\nThis will navigate to the recording interface.`);
+        
+        // Refresh recordings list
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Failed to create recording:', error);
+      alert('Failed to create recording. Please try again.');
+    }
+  };
+
+  const handleViewRecording = (id: string) => {
+    router.push(`/recordings/${id}`);
   };
 
   const handleSignOut = async () => {
@@ -170,7 +191,7 @@ export default function Dashboard() {
                   Dashboard
                 </Link>
                 <Link
-                  href="/sessions"
+                  href="/recordings"
                   className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 font-medium px-3 py-2"
                 >
                   Sessions
@@ -210,10 +231,17 @@ export default function Dashboard() {
           </p>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <p className="text-red-800 dark:text-red-200 text-sm">{error}</p>
+          </div>
+        )}
+
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           <button
-            onClick={() => handleCreateMeeting('mic')}
+            onClick={() => handleCreateRecording('mic')}
             className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow text-left w-full"
           >
             <div className="flex items-center justify-between">
@@ -234,7 +262,7 @@ export default function Dashboard() {
           </button>
 
           <button
-            onClick={() => handleCreateMeeting('tab')}
+            onClick={() => handleCreateRecording('tab')}
             className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow text-left w-full"
           >
             <div className="flex items-center justify-between">
@@ -261,10 +289,10 @@ export default function Dashboard() {
                   Session Stats
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400 text-sm">
-                  {recordings.length} total recordings
+                  {stats.total} total recordings
                 </p>
                 <p className="text-gray-600 dark:text-gray-400 text-sm">
-                  {recordings.filter(r => r.status === 'COMPLETED').length} completed
+                  {stats.completed} completed
                 </p>
               </div>
               <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center">
@@ -284,7 +312,7 @@ export default function Dashboard() {
                 Recent Recordings
               </h2>
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                Last {recordings.length} sessions
+                {recordings.length} of {stats.total} sessions
               </span>
             </div>
           </div>
@@ -307,13 +335,13 @@ export default function Dashboard() {
                 </p>
                 <div className="mt-6 space-x-4">
                   <button
-                    onClick={() => handleCreateMeeting('mic')}
+                    onClick={() => handleCreateRecording('mic')}
                     className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
                   >
                     Start Mic Recording
                   </button>
                   <button
-                    onClick={() => handleCreateMeeting('tab')}
+                    onClick={() => handleCreateRecording('tab')}
                     className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
                     Record Tab Audio
@@ -353,7 +381,10 @@ export default function Dashboard() {
                         {getStatusText(recording.status)}
                       </span>
                       
-                      <button className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-sm">
+                      <button 
+                        onClick={() => handleViewRecording(recording.id)}
+                        className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-sm"
+                      >
                         View Details
                       </button>
                     </div>
