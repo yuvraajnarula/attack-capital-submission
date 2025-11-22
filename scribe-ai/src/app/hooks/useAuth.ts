@@ -193,7 +193,6 @@ export const useRefreshSession = () => {
   return refreshSession;
 };
 
-// Helper hook for auth actions
 export const useAuthActions = () => {
   const { login, logout, setActionLoading } = useAuth();
 

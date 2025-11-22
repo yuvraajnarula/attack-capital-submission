@@ -1,28 +1,35 @@
 import { useState, useCallback } from 'react';
 import { useAuth } from './useAuth';
 
-interface ProfileData {
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  // Add any additional fields your backend returns
+}
+
+export interface ProfileData {
   name: string;
   email: string;
 }
 
-interface PasswordData {
+export interface PasswordData {
   currentPassword: string;
   newPassword: string;
 }
 
-interface PreferencesData {
+export interface PreferencesData {
   transcriptionLanguage: string;
   autoSummarize: boolean;
   emailNotifications: boolean;
   theme: string;
 }
 
-interface ApiResponse {
+export interface ApiResponse {
   success: boolean;
   error?: string;
   message?: string;
-  user?: any;
+  user?: User;
   preferences?: PreferencesData;
 }
 
@@ -37,126 +44,136 @@ export const useUserSettings = () => {
     setSuccessMessage(null);
   }, []);
 
-  const handleApiCall = async (
+  // Generic API handler with strict typing
+  const handleApiCall = async <TBody, TResponse>(
     url: string,
     method: string,
-    body?: any
-  ): Promise<ApiResponse | null> => {
+    body?: TBody
+  ): Promise<TResponse | null> => {
     try {
+      setIsLoading(true);
+
       const response = await fetch(url, {
         method,
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         ...(body && { body: JSON.stringify(body) }),
       });
 
-      const text = await response.text();
-      let data: ApiResponse | null = null;
+      const raw = await response.text();
+      let data: TResponse | null = null;
 
-      if (text && text.trim()) {
+      if (raw.trim()) {
         try {
-          data = JSON.parse(text);
-        } catch (parseError) {
+          data = JSON.parse(raw) as TResponse;
+        } catch {
           throw new Error('Invalid response from server');
         }
       }
 
       if (!response.ok) {
-        throw new Error(data?.error || `Request failed with status ${response.status}`);
+        const errMsg =
+          (data as ApiResponse | null)?.error || `Request failed with status ${response.status}`;
+        throw new Error(errMsg);
       }
 
       return data;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Request failed';
-      setError(errorMessage);
+      const message = err instanceof Error ? err.message : 'Request failed';
+      setError(message);
       throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const updateProfile = useCallback(async (profileData: ProfileData): Promise<boolean> => {
-    setIsLoading(true);
-    clearMessages();
+  const updateProfile = useCallback(
+    async (profileData: ProfileData): Promise<boolean> => {
+      clearMessages();
 
-    try {
-      const data = await handleApiCall('/api/user/profile', 'PUT', profileData);
+      try {
+        const data = await handleApiCall<ProfileData, ApiResponse>(
+          '/api/user/profile',
+          'PUT',
+          profileData
+        );
 
-      if (data?.user) {
-        updateUser(data.user);
+        if (data?.user) {
+          updateUser(data.user);
+        }
+
+        setSuccessMessage('Profile updated successfully!');
+        setTimeout(() => setSuccessMessage(null), 5000);
+        return true;
+      } catch (err) {
+        console.error('Update profile error:', err);
+        return false;
       }
+    },
+    [updateUser, clearMessages]
+  );
 
-      setSuccessMessage('Profile updated successfully!');
-      setTimeout(() => setSuccessMessage(null), 5000);
-      return true;
-    } catch (err) {
-      console.error('Update profile error:', err);
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [updateUser, clearMessages]);
+  const updatePassword = useCallback(
+    async (passwordData: PasswordData): Promise<boolean> => {
+      clearMessages();
 
-  const updatePassword = useCallback(async (passwordData: PasswordData): Promise<boolean> => {
-    setIsLoading(true);
-    clearMessages();
+      try {
+        await handleApiCall<PasswordData, ApiResponse>(
+          '/api/user/password',
+          'PUT',
+          passwordData
+        );
 
-    try {
-      await handleApiCall('/api/user/password', 'PUT', passwordData);
-      setSuccessMessage('Password updated successfully!');
-      setTimeout(() => setSuccessMessage(null), 5000);
-      return true;
-    } catch (err) {
-      console.error('Update password error:', err);
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [clearMessages]);
+        setSuccessMessage('Password updated successfully!');
+        setTimeout(() => setSuccessMessage(null), 5000);
+        return true;
+      } catch (err) {
+        console.error('Update password error:', err);
+        return false;
+      }
+    },
+    [clearMessages]
+  );
 
-  const updatePreferences = useCallback(async (preferencesData: PreferencesData): Promise<boolean> => {
-    setIsLoading(true);
-    clearMessages();
+  const updatePreferences = useCallback(
+    async (preferencesData: PreferencesData): Promise<boolean> => {
+      clearMessages();
 
-    try {
-      await handleApiCall('/api/user/preferences', 'PUT', preferencesData);
-      setSuccessMessage('Preferences updated successfully!');
-      setTimeout(() => setSuccessMessage(null), 5000);
-      return true;
-    } catch (err) {
-      console.error('Update preferences error:', err);
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [clearMessages]);
+      try {
+        await handleApiCall<PreferencesData, ApiResponse>(
+          '/api/user/preferences',
+          'PUT',
+          preferencesData
+        );
 
-  const fetchPreferences = useCallback(async (): Promise<PreferencesData | null> => {
-    clearMessages();
+        setSuccessMessage('Preferences updated successfully!');
+        setTimeout(() => setSuccessMessage(null), 5000);
+        return true;
+      } catch (err) {
+        console.error('Update preferences error:', err);
+        return false;
+      }
+    },
+    [clearMessages]
+  );
 
-    try {
-      const data = await handleApiCall('/api/user/preferences', 'GET');
-      return data?.preferences || null;
-    } catch (err) {
-      console.error('Fetch preferences error:', err);
-      return null;
-    }
-  }, [clearMessages]);
+  const deleteAccount = useCallback(
+    async (): Promise<boolean> => {
+      clearMessages();
 
-  const deleteAccount = useCallback(async (): Promise<boolean> => {
-    setIsLoading(true);
-    clearMessages();
-
-    try {
-      await handleApiCall('/api/user/account', 'DELETE');
-      return true;
-    } catch (err) {
-      console.error('Delete account error:', err);
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [clearMessages]);
+      try {
+        await handleApiCall<undefined, ApiResponse>(
+          '/api/user/account',
+          'DELETE'
+        );
+        return true;
+      } catch (err) {
+        console.error('Delete account error:', err);
+        return false;
+      }
+    },
+    [clearMessages]
+  );
 
   return {
     isLoading,
@@ -166,7 +183,6 @@ export const useUserSettings = () => {
     updateProfile,
     updatePassword,
     updatePreferences,
-    fetchPreferences,
     deleteAccount,
   };
 };
