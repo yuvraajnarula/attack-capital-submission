@@ -35,6 +35,8 @@ npm run build
 
 ### Development
 
+
+
 Run frontend and backend concurrently:
 ```bash
 npm run dev:all
@@ -61,3 +63,5 @@ src/
 ├── hooks/            # React hooks for features
 └── generated/        # Prisma client and types
 ```
+
+loom link : https://www.loom.com/share/87c1891bc42a40d8ae53b253eef8b3a2
