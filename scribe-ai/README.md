@@ -64,4 +64,4 @@ src/
 └── generated/        # Prisma client and types
 ```
 
-loom link : https://www.loom.com/share/87c1891bc42a40d8ae53b253eef8b3a2
+loom link : [https://www.loom.com/share/5229dac57e0f4a89b72adf267333840e](https://www.loom.com/share/5229dac57e0f4a89b72adf267333840e)
