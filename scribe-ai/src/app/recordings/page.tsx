@@ -10,7 +10,6 @@ export default function RecordingsPage() {
     const { user, isAuthenticated } = useAuth();
     const { isLoading } = useAuthInit();
     const router = useRouter();
-
     const [recordings, setRecordings] = useState<Recording[]>([]);
     const [isLoadingRecordings, setIsLoadingRecordings] = useState(true);
     const [error, setError] = useState<string>('');

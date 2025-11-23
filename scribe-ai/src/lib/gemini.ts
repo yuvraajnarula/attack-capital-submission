@@ -28,7 +28,7 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
         console.log(' Converted to base64, length:', base64Audio.length);
 
         const model = genAI.getGenerativeModel({
-            model: 'gemini-3-pro-preview',
+            model: 'gemini-2.5-flash',
         });
 
         const prompt = `Transcribe the following audio accurately. 
@@ -102,7 +102,7 @@ export const generateSummary = async (transcript: string): Promise<string> => {
         }
 
         const model = genAI.getGenerativeModel({
-            model: 'gemini-3.0-preview',
+            model: 'gemini-2.5-flash',
         });
 
         const prompt = `Analyze and summarize the following transcript.
