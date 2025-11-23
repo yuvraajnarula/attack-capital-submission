@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { auth } from '@/lib/auth';
+import prisma from '../../../lib/prisma';
+import { auth } from '../../../lib/auth';
 import { headers } from 'next/headers';
 import { RecordingStatus, Prisma } from '../../../generated/prisma/client';
 
@@ -21,12 +21,11 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const limit = parseInt(searchParams.get('limit') || '10');
     const offset = parseInt(searchParams.get('offset') || '0');
-    const status = searchParams.get('status');
+    const status = searchParams.get('status'); 
 
     // Build where clause
     const where: Prisma.RecordingWhereInput = {
       userId: session.user.id,
-      status: RecordingStatus.ACTIVE
     };
 
 

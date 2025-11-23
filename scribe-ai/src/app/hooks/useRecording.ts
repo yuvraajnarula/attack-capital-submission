@@ -196,8 +196,8 @@ export const useRecordings = (options: UseRecordingsOptions = {}) => {
         throw new Error(`Failed to fetch recording: ${response.status}`);
       }
 
-      const data: RecordingResponse = await response.json();
-
+      const data = await response.json();
+      console.log(data)
       if (data.success) {
         return data.recording;
       }

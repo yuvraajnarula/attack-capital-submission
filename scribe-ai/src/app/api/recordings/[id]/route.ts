@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import  prisma  from '@/lib/prisma';
-import { auth } from '@/lib/auth';
+import prisma from '../../../../lib/prisma';
+import { auth } from '../../../../lib/auth';
 import { headers } from 'next/headers';
-
-interface RouteParams {
-  params: {
-    id: string;
-  };
-}
 
 export async function GET(
   req: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> } // ✅ params is a Promise
 ) {
   try {
+    const { id } = await params; // ✅ Await the params first
+    
     const session = await auth.api.getSession({
       headers: await headers()
     });
@@ -25,14 +21,13 @@ export async function GET(
       );
     }
 
-    const recording = await prisma.recording.findFirst({
+    const recording = await prisma.recording.findUnique({
       where: {
-        id: params.id,
-        userId: session.user.id
+        id: id // ✅ Now using the resolved id
       }
     });
 
-    if (!recording) {
+    if (!recording || recording.userId !== session.user.id) {
       return NextResponse.json(
         { error: 'Recording not found' },
         { status: 404 }
@@ -54,9 +49,11 @@ export async function GET(
 
 export async function PUT(
   req: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params; // ✅ Await params
+    
     const session = await auth.api.getSession({
       headers: await headers()
     });
@@ -73,7 +70,7 @@ export async function PUT(
     // Verify ownership
     const existingRecording = await prisma.recording.findFirst({
       where: {
-        id: params.id,
+        id: id, // ✅ Use resolved id
         userId: session.user.id
       }
     });
@@ -87,7 +84,7 @@ export async function PUT(
 
     // Update recording
     const recording = await prisma.recording.update({
-      where: { id: params.id },
+      where: { id: id }, // ✅ Use resolved id
       data: {
         ...(data.title && { title: data.title }),
         ...(data.status && { status: data.status }),
@@ -113,9 +110,11 @@ export async function PUT(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params; // ✅ Await params
+    
     const session = await auth.api.getSession({
       headers: await headers()
     });
@@ -130,7 +129,7 @@ export async function DELETE(
     // Verify ownership
     const existingRecording = await prisma.recording.findFirst({
       where: {
-        id: params.id,
+        id: id, // ✅ Use resolved id
         userId: session.user.id
       }
     });
@@ -144,7 +143,7 @@ export async function DELETE(
 
     // Delete recording
     await prisma.recording.delete({
-      where: { id: params.id }
+      where: { id: id } // ✅ Use resolved id
     });
 
     return NextResponse.json({

@@ -581,7 +581,13 @@ export default function NewRecordingPage() {
                                     href="/recordings"
                                     className="text-blue-600 dark:text-blue-400 font-medium border-b-2 border-blue-600 dark:border-blue-400 px-3 py-2"
                                 >
-                                    Sessions
+                                    All Recordings
+                                </Link>
+                                <Link
+                                    href="/settings"
+                                    className="text-blue-600 dark:text-blue-400 font-medium border-b-2 border-blue-600 dark:border-blue-400 px-3 py-2"
+                                >
+                                    Settings
                                 </Link>
                             </nav>
                         </div>
