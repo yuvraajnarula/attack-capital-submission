@@ -42,7 +42,6 @@ npm run dev:all
 
 Or run separately:
 ```bash
-npm run dev        # Next.js frontend (port 3000)
 npm run server     # Socket.io server
 ```
 
