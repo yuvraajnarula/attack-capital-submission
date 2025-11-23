@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth, useAuthInit, useAuthActions } from '../hooks/useAuth';
@@ -19,10 +19,15 @@ interface RecordingsResponse {
 
 export default function Dashboard() {
   const { user, isAuthenticated } = useAuth();
-  const { isLoading } = useAuthInit(); 
+  const { isLoading } = useAuthInit();
   const { signOut } = useAuthActions();
+  const {
+    fetchRecordings
+  }
+    = useRecordings();
+
   const router = useRouter();
-  
+
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isLoadingRecordings, setIsLoadingRecordings] = useState(false);
   const [error, setError] = useState<string>('');
@@ -45,7 +50,6 @@ export default function Dashboard() {
       if (isAuthenticated && !isLoading) {
         setIsLoadingRecordings(true);
         setError('');
-        
         try {
           const response = await fetch('/api/recordings?limit=10&offset=0', {
             method: 'GET',
@@ -60,16 +64,16 @@ export default function Dashboard() {
           }
 
           const data: RecordingsResponse = await response.json();
-          
+
           if (data.success) {
             setRecordings(data.recordings);
-            
+
             // Calculate stats
             const total = data.pagination.total;
             const completed = data.recordings.filter(r => r.status === 'COMPLETED').length;
             const processing = data.recordings.filter(r => r.status === 'PROCESSING').length;
             const recording = data.recordings.filter(r => r.status === 'RECORDING').length;
-            
+
             setStats({ total, completed, processing, recording });
           }
         } catch (error) {
@@ -197,7 +201,7 @@ export default function Dashboard() {
                 </Link>
               </nav>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-700 dark:text-gray-300">
                 Welcome, {user?.name}
@@ -342,7 +346,7 @@ export default function Dashboard() {
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 Recent Recordings
               </h2>
-              <Link 
+              <Link
                 href="/recordings"
                 className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-sm"
               >
@@ -350,7 +354,7 @@ export default function Dashboard() {
               </Link>
             </div>
           </div>
-          
+
           <div className="p-6">
             {isLoadingRecordings ? (
               <div className="flex justify-center py-8">
@@ -400,20 +404,19 @@ export default function Dashboard() {
                         )}
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center space-x-3 flex-shrink-0">
-                      <span className={`px-3 py-1 text-xs rounded-full ${
-                        recording.status === 'COMPLETED' 
+                      <span className={`px-3 py-1 text-xs rounded-full ${recording.status === 'COMPLETED'
                           ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                           : recording.status === 'PROCESSING'
-                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                          : recording.status === 'RECORDING'
-                          ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                          : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                      }`}>
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                            : recording.status === 'RECORDING'
+                              ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                        }`}>
                         {getStatusText(recording.status)}
                       </span>
-                      
+
                       <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>

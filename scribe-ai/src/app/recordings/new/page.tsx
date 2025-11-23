@@ -34,9 +34,20 @@ export default function NewRecordingPage() {
     const audioChunksRef = useRef<Blob[]>([]);
     const streamRef = useRef<MediaStream | null>(null);
     const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const mimeTypeRef = useRef<string>('');
+    const isStoppingRef = useRef<boolean>(false); // Prevent multiple stop calls
+    const isMountedRef = useRef<boolean>(true); // Track component mount status
 
     const { createRecording } = useRecordings();
     const { isConnected, emit, on, off } = useSocketContext();
+
+    // Track mounted state
+    useEffect(() => {
+        isMountedRef.current = true;
+        return () => {
+            isMountedRef.current = false;
+        };
+    }, []);
 
     // Redirect if not authenticated
     useEffect(() => {
@@ -51,20 +62,46 @@ export default function NewRecordingPage() {
             let stream: MediaStream;
 
             if (recordingMode === 'screen') {
-                stream = await navigator.mediaDevices.getDisplayMedia({
+                const displayStream = await navigator.mediaDevices.getDisplayMedia({
                     video: true,
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        sampleRate: 44100,
-                    }
+                    audio: true
                 });
 
-                stream.getVideoTracks()[0].onended = () => {
-                    if (isRecording && !isPaused) {
-                        stopRecording();
-                    }
-                };
+                console.log('Display stream tracks:', {
+                    video: displayStream.getVideoTracks().length,
+                    audio: displayStream.getAudioTracks().length
+                });
+
+                let audioStream: MediaStream | null = null;
+                try {
+                    audioStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            sampleRate: 44100,
+                        }
+                    });
+                    console.log('Microphone stream tracks:', audioStream.getAudioTracks().length);
+                } catch (err) {
+                    console.warn('Could not get microphone audio:', err);
+                }
+
+                const audioTracks = [
+                    ...displayStream.getAudioTracks(),
+                    ...(audioStream ? audioStream.getAudioTracks() : [])
+                ];
+
+                console.log('Total audio tracks:', audioTracks.length);
+
+                if (audioTracks.length === 0) {
+                    displayStream.getTracks().forEach(track => track.stop());
+                    throw new Error('No audio tracks available. Please enable microphone or system audio for screen recording.');
+                }
+
+                stream = new MediaStream([
+                    ...displayStream.getVideoTracks(),
+                    ...audioTracks
+                ]);
             } else {
                 stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
@@ -75,95 +112,245 @@ export default function NewRecordingPage() {
                 });
             }
 
-            streamRef.current = stream;
+            if (stream.getAudioTracks().length === 0) {
+                stream.getTracks().forEach(track => track.stop());
+                throw new Error('No audio tracks available in the stream');
+            }
+
+            console.log('Stream created with', stream.getAudioTracks().length, 'audio track(s) and', stream.getVideoTracks().length, 'video track(s)');
+
+            stream.getTracks().forEach(track => {
+                console.log(`Track: ${track.kind} - ${track.label} - enabled: ${track.enabled} - readyState: ${track.readyState}`);
+            });
+
             return stream;
         } catch (error) {
             console.error('Error initializing media:', error);
             throw error;
         }
-    }, [recordingMode, isRecording, isPaused]);
+    }, [recordingMode]);
 
     // Start recording timer
-    const startRecordingTimer = () => {
+    const startRecordingTimer = useCallback(() => {
         if (recordingTimerRef.current) {
             clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
         }
+
+        setRecordingTime(0);
 
         recordingTimerRef.current = setInterval(() => {
             setRecordingTime(prev => prev + 1);
         }, 1000);
-    };
+    }, []);
 
     // Stop recording timer
-    const stopRecordingTimer = () => {
+    const stopRecordingTimer = useCallback(() => {
         if (recordingTimerRef.current) {
             clearInterval(recordingTimerRef.current);
             recordingTimerRef.current = null;
         }
         setRecordingTime(0);
-    };
+    }, []);
+
+    // Get supported MIME type
+    const getSupportedMimeType = useCallback((stream: MediaStream): string => {
+        const hasVideo = stream?.getVideoTracks()?.length > 0;
+        
+        const possibleTypes = hasVideo ? [
+            'video/webm;codecs=vp8,opus',
+            'video/webm;codecs=vp9,opus',
+            'video/webm',
+        ] : [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/ogg;codecs=opus',
+            'audio/mp4',
+            'audio/mpeg',
+            'audio/wav'
+        ];
+
+        for (const type of possibleTypes) {
+            if (MediaRecorder.isTypeSupported(type)) {
+                console.log('Using MIME type:', type);
+                return type;
+            }
+        }
+
+        console.warn('⚠️ No preferred MIME type supported, using default');
+        return '';
+    }, []);
+
+    // Stop recording
+    const stopRecording = useCallback(async () => {
+        console.log('🛑 stopRecording called, isStoppingRef:', isStoppingRef.current);
+        
+        // Prevent multiple simultaneous stop calls
+        if (isStoppingRef.current) {
+            console.log('Already stopping, ignoring call');
+            return;
+        }
+
+        if (!mediaRecorderRef.current || !isRecording) {
+            console.log('stopRecording: No active recording');
+            return;
+        }
+
+        isStoppingRef.current = true;
+        
+        try {
+            console.log('Stopping recording, MediaRecorder state:', mediaRecorderRef.current.state);
+            
+            if (mediaRecorderRef.current.state !== 'inactive') {
+                mediaRecorderRef.current.stop();
+            }
+            
+            setIsRecording(false);
+            setIsPaused(false);
+            stopRecordingTimer();
+
+            if (streamRef.current) {
+                console.log('🔌 Stopping all stream tracks');
+                streamRef.current.getTracks().forEach(track => {
+                    console.log('Stopping track:', track.kind, track.label);
+                    track.stop();
+                });
+                streamRef.current = null;
+            }
+
+            setCurrentSession(prev => prev ? { ...prev, status: 'PROCESSING' } : null);
+        } catch (error) {
+            console.error('Error in stopRecording:', error);
+        } finally {
+            // Reset after a short delay to allow onstop handler to complete
+            setTimeout(() => {
+                isStoppingRef.current = false;
+            }, 1000);
+        }
+    }, [isRecording, stopRecordingTimer]);
 
     // Start recording session
     const startRecording = async () => {
         try {
+            console.log(' Starting recording...');
+
             if (!isConnected) {
                 alert('Not connected to server. Please wait and try again.');
                 return;
             }
 
             const title = prompt('Enter recording title:') || `Recording ${new Date().toLocaleString()}`;
+            console.log('Creating recording with title:', title);
 
             const newRecording = await createRecording(title);
             if (!newRecording) {
                 throw new Error('Failed to create recording');
             }
 
-            const stream = await initializeMedia();
+            console.log('Recording created:', newRecording);
 
-            const mediaRecorder = new MediaRecorder(stream, {
-                mimeType: 'audio/webm;codecs=opus'
+            const stream = await initializeMedia();
+            console.log('Media stream initialized');
+            
+            streamRef.current = stream;
+
+            // Set up track ended handlers - but DON'T auto-stop for screen share
+            stream.getTracks().forEach(track => {
+                track.onended = () => {
+                    console.warn(`Track ended: ${track.kind} - ${track.label}`);
+                    // Only auto-stop for screen share video track (user clicked browser's stop button)
+                    if (recordingMode === 'screen' && track.kind === 'video') {
+                        console.log('Screen share stopped by user, stopping recording...');
+                        stopRecording();
+                    }
+                };
             });
+
+            const mimeType = getSupportedMimeType(stream);
+            mimeTypeRef.current = mimeType;
+
+            const mediaRecorder = mimeType 
+                ? new MediaRecorder(stream, { mimeType })
+                : new MediaRecorder(stream);
+
+            console.log('MediaRecorder created with MIME type:', mimeType || 'default');
 
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
+            isStoppingRef.current = false; // Reset stopping flag
 
             mediaRecorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
-                    console.log(' Audio chunk captured:', event.data.size, 'bytes');
+                    console.log('Audio chunk captured:', event.data.size, 'bytes');
                     audioChunksRef.current.push(event.data);
 
                     event.data.arrayBuffer().then(buffer => {
-                        console.log(' Sending audio chunk to server');
+                        console.log('Sending audio chunk to server');
                         const sent = emit('audio-chunk', {
                             recordingId: newRecording.id,
                             chunk: buffer,
                             isFinal: false
                         });
-                        console.log('Audio chunk sent:', sent);
+                        console.log('Audio chunk sent:', sent ? 'yes' : 'no');
+                    }).catch(err => {
+                        console.error('Error sending audio chunk:', err);
                     });
                 }
             };
 
             mediaRecorder.onstop = () => {
+                console.log('MediaRecorder.onstop triggered');
+                console.log('Total chunks collected:', audioChunksRef.current.length);
+                
                 if (audioChunksRef.current.length > 0) {
-                    const finalBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                    const finalBlob = new Blob(audioChunksRef.current, { 
+                        type: mimeTypeRef.current || 'audio/webm' 
+                    });
+                    console.log('Final blob size:', finalBlob.size, 'bytes');
+                    
                     finalBlob.arrayBuffer().then(buffer => {
+                        console.log('Sending final audio chunk');
                         emit('audio-chunk', {
                             recordingId: newRecording.id,
                             chunk: buffer,
                             isFinal: true
                         });
+                        
+                        // Send complete signal after final chunk
+                        setTimeout(() => {
+                            console.log('Emitting complete-recording');
+                            emit('complete-recording', {
+                                recordingId: newRecording.id
+                            });
+                        }, 500);
+                    }).catch(err => {
+                        console.error(' Error sending final chunk:', err);
+                    });
+                } else {
+                    console.warn('No audio chunks were collected!');
+                    // Still try to complete
+                    emit('complete-recording', {
+                        recordingId: newRecording.id
                     });
                 }
 
-                emit('complete-recording', {
-                    recordingId: newRecording.id
-                });
+                // Clear the chunks
+                audioChunksRef.current = [];
             };
 
+            mediaRecorder.onerror = (event: any) => {
+                console.error(' MediaRecorder error:', event);
+                console.error('Error details:', event.error);
+                alert('Recording error occurred. Please try again.');
+            };
+
+            console.log('🎬 Starting MediaRecorder with 1000ms timeslice');
+            
             mediaRecorder.start(1000);
+            
             setIsRecording(true);
             setIsPaused(false);
+            
             startRecordingTimer();
 
             setCurrentSession({
@@ -179,15 +366,28 @@ export default function NewRecordingPage() {
             setTranscript('');
             setSummary('');
 
+            console.log('Recording started successfully');
+
         } catch (error) {
-            console.error('Error starting recording:', error);
+            console.error(' Error starting recording:', error);
+            
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
+                streamRef.current = null;
+            }
+            stopRecordingTimer();
+            setIsRecording(false);
+            setIsPaused(false);
+
             if (error instanceof Error) {
                 if (error.name === 'NotAllowedError') {
                     alert('Permission denied. Please allow microphone/screen share access.');
                 } else if (error.name === 'NotFoundError') {
                     alert('No microphone found. Please check your audio devices.');
+                } else if (error.name === 'NotSupportedError') {
+                    alert('Recording is not supported in this browser. Please try Chrome, Firefox, or Edge.');
                 } else {
-                    alert('Failed to start recording. Please try again.');
+                    alert(`Failed to start recording: ${error.message}`);
                 }
             }
         }
@@ -196,11 +396,13 @@ export default function NewRecordingPage() {
     // Pause recording
     const pauseRecording = () => {
         if (mediaRecorderRef.current && isRecording && !isPaused) {
+            console.log('Pausing recording');
             mediaRecorderRef.current.pause();
             setIsPaused(true);
 
             if (recordingTimerRef.current) {
                 clearInterval(recordingTimerRef.current);
+                recordingTimerRef.current = null;
             }
 
             emit('pause-recording', {
@@ -214,32 +416,22 @@ export default function NewRecordingPage() {
     // Resume recording
     const resumeRecording = () => {
         if (mediaRecorderRef.current && isRecording && isPaused) {
+            console.log(' Resuming recording');
             mediaRecorderRef.current.resume();
             setIsPaused(false);
-            startRecordingTimer();
+            
+            if (recordingTimerRef.current) {
+                clearInterval(recordingTimerRef.current);
+            }
+            recordingTimerRef.current = setInterval(() => {
+                setRecordingTime(prev => prev + 1);
+            }, 1000);
 
             emit('resume-recording', {
                 recordingId: currentSession?.id || ''
             });
 
             setCurrentSession(prev => prev ? { ...prev, status: 'RECORDING' } : null);
-        }
-    };
-
-    // Stop recording
-    const stopRecording = async () => {
-        if (mediaRecorderRef.current && isRecording) {
-            mediaRecorderRef.current.stop();
-            setIsRecording(false);
-            setIsPaused(false);
-            stopRecordingTimer();
-
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-                streamRef.current = null;
-            }
-
-            setCurrentSession(prev => prev ? { ...prev, status: 'PROCESSING' } : null);
         }
     };
 
@@ -251,6 +443,7 @@ export default function NewRecordingPage() {
             timestamp: string;
             isFinal: boolean;
         }) => {
+            console.log('Transcription update:', data);
             if (currentSession && data.recordingId === currentSession.id) {
                 setTranscript(prev => {
                     const newTranscript = prev + (prev ? ' ' : '') + data.text;
@@ -270,6 +463,7 @@ export default function NewRecordingPage() {
             transcript: string;
             duration: number;
         }) => {
+            console.log('Recording completed:', data);
             if (currentSession && data.recordingId === currentSession.id) {
                 setSummary(data.summary);
                 setCurrentSession(prev => prev ? {
@@ -280,9 +474,13 @@ export default function NewRecordingPage() {
                     duration: data.duration
                 } : null);
 
-                setTimeout(() => {
-                    router.push(`/recordings/${currentSession.id}`);
-                }, 2000);
+                // Only redirect if component is still mounted
+                if (isMountedRef.current) {
+                    setTimeout(() => {
+                        console.log('Redirecting to recording detail page');
+                        router.push(`/recordings/${currentSession.id}`);
+                    }, 2000);
+                }
             }
         };
 
@@ -290,6 +488,7 @@ export default function NewRecordingPage() {
             recordingId: string;
             error: string;
         }) => {
+            console.error('Recording error from server:', data);
             if (currentSession && data.recordingId === currentSession.id) {
                 alert(`Recording error: ${data.error}`);
                 setCurrentSession(prev => prev ? { ...prev, status: 'COMPLETED' } : null);
@@ -300,6 +499,7 @@ export default function NewRecordingPage() {
             recordingId: string;
             status: string;
         }) => {
+            console.log('Recording status:', data);
             if (currentSession && data.recordingId === currentSession.id) {
                 setCurrentSession(prev => prev ? {
                     ...prev,
@@ -321,18 +521,23 @@ export default function NewRecordingPage() {
         };
     }, [currentSession, router, on, off]);
 
-    // Cleanup on unmount
+    // Cleanup ONLY on unmount (not on isRecording change)
     useEffect(() => {
         return () => {
-            if (mediaRecorderRef.current && isRecording) {
+            console.log('Component unmounting - cleanup');
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                console.log('Stopping MediaRecorder in cleanup');
                 mediaRecorderRef.current.stop();
             }
             if (streamRef.current) {
+                console.log('🔌 Stopping stream tracks in cleanup');
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
-            stopRecordingTimer();
+            if (recordingTimerRef.current) {
+                clearInterval(recordingTimerRef.current);
+            }
         };
-    }, [isRecording]);
+    }, []); // Empty deps - only on unmount
 
     const formatDuration = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
@@ -357,7 +562,7 @@ export default function NewRecordingPage() {
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-            {/* Header - same as before */}
+            {/* Header */}
             <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center h-16">
@@ -412,7 +617,7 @@ export default function NewRecordingPage() {
                     </div>
                 </div>
 
-                {/* Recording Controls - same as before */}
+                {/* Recording Controls */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
                     <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
                         <div className="flex gap-4">
@@ -485,17 +690,16 @@ export default function NewRecordingPage() {
                         </div>
                     </div>
 
-                    {/* Rest of the component remains the same */}
                     {currentSession && (
                         <div className="border-t pt-4 dark:border-gray-700">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                                     {currentSession.title}
                                 </h3>
-                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${currentSession.status === 'RECORDING' ? 'bg-green-100 text-green-800' :
-                                        currentSession.status === 'PAUSED' ? 'bg-yellow-100 text-yellow-800' :
-                                            currentSession.status === 'PROCESSING' ? 'bg-blue-100 text-blue-800' :
-                                                'bg-gray-100 text-gray-800'
+                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${currentSession.status === 'RECORDING' ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100' :
+                                        currentSession.status === 'PAUSED' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100' :
+                                            currentSession.status === 'PROCESSING' ? 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100' :
+                                                'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100'
                                     }`}>
                                     {currentSession.status}
                                 </span>
